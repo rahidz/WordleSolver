@@ -108,8 +108,17 @@ def run_full_filter(word_length, pattern, not_allowed, misplaced_input, used_let
         not_allowed,
         misplaced_input,
     )
+
+    # --- Best Guesses Calculation ---
+    overall_distribution, _ = filters.compute_letter_distributions(filtered_results)
     
-    return filtered_results, word_list, used_letters, not_allowed_letters, word_length
+    best_guess_list = filters.best_guesses(
+        filtered_results,
+        word_list,
+        overall_distribution
+    )
+    
+    return filtered_results, word_list, used_letters, not_allowed_letters, word_length, best_guess_list, overall_distribution
 
 def apply_filter():
     # Retrieve user inputs from the GUI.
@@ -194,7 +203,7 @@ def apply_filter():
 
 def on_filter_complete(future):
     try:
-        results, word_list, used_letters, not_allowed_letters, word_length = future.result()
+        results, word_list, used_letters, not_allowed_letters, word_length, best_guess_list, overall_distribution = future.result()
     except FileNotFoundError as e:
         root.after(0, lambda: messagebox.showerror("File Error", str(e)))
         root.after(0, lambda: filter_button.config(state=tk.NORMAL))
@@ -206,7 +215,7 @@ def on_filter_complete(future):
         root.after(0, lambda: status_text.set("Error during filtering"))
         return
 
-    def update_ui():
+    def update_ui(results, best_guess_list, overall_distribution):
         # Write results to an output file.
         try:
             with open("sorted_filtered_words.txt", "w") as outfile:
@@ -225,10 +234,15 @@ def on_filter_complete(future):
         for word, frequency in results:
             output_tree.insert("", tk.END, values=(word, frequency))
 
-        # Compute and update the Letter Distribution Treeview
-        overall_distribution, _ = filters.compute_letter_distributions(results)
+        # Update the Letter Distribution Treeview
         for letter, freq in sorted(overall_distribution.items(), key=lambda x: x[1], reverse=True):
             letter_tree.insert("", tk.END, values=(letter, freq))
+
+        # --- Best Guesses (with color-coding) ---
+        possible_answers = {word for word, _ in results}
+        for word, score in best_guess_list:
+            tag = "possible" if word in possible_answers else "probe"
+            best_guesses_tree.insert("", tk.END, values=(word, f"{score:.2f}"), tags=(tag,))
 
         # --- Update Words from Remaining Letters ---
         try:
@@ -245,7 +259,7 @@ def on_filter_complete(future):
         # Re-enable filter button
         filter_button.config(state=tk.NORMAL)
 
-    root.after(0, update_ui)
+    root.after(0, update_ui, results, best_guess_list, overall_distribution)
 
 def rebuild_grid(word_length, rows=6):
     # Clear existing widgets from the grid_frame
@@ -388,6 +402,10 @@ best_guesses_sb = ttk.Scrollbar(best_guesses_frame, orient="vertical", command=b
 best_guesses_tree.configure(yscrollcommand=best_guesses_sb.set)
 best_guesses_sb.pack(side="right", fill="y")
 best_guesses_tree.pack(side="left", fill="both", expand=True)
+
+# --- UI Polish: Color-coding for Best Guesses ---
+best_guesses_tree.tag_configure("possible", background="#d5f5d5")  # A light green
+best_guesses_tree.tag_configure("probe", background="#e0e0e0")     # A light gray
 
 # --- Words from Unused Letters ---
 remaining_words_frame = ttk.LabelFrame(right_frame, text="Words from Remaining Letters", padding="5")

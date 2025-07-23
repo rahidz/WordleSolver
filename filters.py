@@ -1,5 +1,8 @@
 import os
 
+import math
+from collections import Counter
+from collections import Counter
 def parse_misplaced_letters(s):
     """
     Parses the misplaced letters input.
@@ -187,3 +190,105 @@ def find_words_from_remaining_letters(word_list, used_letters, not_allowed_lette
             
     valid_words.sort(key=lambda x: x[1], reverse=True)
     return valid_words
+
+
+# ------------------------------------------------------------------
+# Best Guess Scorer
+# ------------------------------------------------------------------
+
+def score_coverage(word, overall_distribution):
+    """Sum of letter frequencies, counting each letter once."""
+    return sum(overall_distribution.get(ch, 0)
+               for ch in set(word.lower()))
+
+def get_feedback_pattern(guess, answer):
+    """
+    Returns a 5-char string such as 'GYBBY'
+    (G=green, Y=yellow, B=gray).
+    Handles duplicate letters correctly.
+    """
+    g = guess.lower()
+    a = answer.lower()
+    pattern = ['B'] * len(g)
+    
+    # Use a counter to handle duplicate letters in the answer
+    answer_counts = Counter(a)
+
+    # Pass 1: Find green letters
+    for i, ch in enumerate(g):
+        if ch == a[i]:
+            pattern[i] = 'G'
+            answer_counts[ch] -= 1
+
+    # Pass 2: Find yellow letters
+    for i, ch in enumerate(g):
+        if pattern[i] == 'B' and answer_counts.get(ch, 0) > 0:
+            pattern[i] = 'Y'
+            answer_counts[ch] -= 1
+            
+    return "".join(pattern)
+
+def score_entropy(guess, possible_words):
+    """
+    Expected information gain (bits) of `guess`
+    given the current `possible_words` list.
+
+    Complexity: O(len(possible_words)^2) naively,
+    so call only when the pool is reasonably small.
+    """
+    pattern_counts = Counter()
+
+    for answer in possible_words:
+        pattern = get_feedback_pattern(guess, answer)
+        pattern_counts[pattern] += 1
+
+    total = len(possible_words)
+    if not total:
+        return 0.0
+
+    ent = 0.0
+    for c in pattern_counts.values():
+        p = c / total
+        ent -= p * math.log2(p)
+    return ent
+
+def best_guesses(
+    possible_words, word_list, overall_distribution, cutoff=250, top_n=15, probe_limit=2000
+):
+    """
+    Chooses a scoring strategy and returns the top N best guesses.
+    """
+    if not possible_words:
+        return []  # No possible answers means no guesses to suggest.
+
+    word_length = len(possible_words[0][0])
+    possible_words_only = [w for w, _ in possible_words]
+
+    # Decide on the scoring function and the pool of candidates to test.
+    if cutoff is None or len(possible_words) <= cutoff:
+        # For smaller possibility lists, use the more accurate entropy score.
+        scorer = lambda w: score_entropy(w, possible_words_only)
+
+        # The best guess might be a "probe" word not in the possible list.
+        # So, we create a candidate pool of possible words + the most common
+        # words from the full dictionary to act as probes.
+        probe_pool = [
+            w for w, _ in word_list[:probe_limit] if len(w) == word_length
+        ]
+        
+        # Combine the lists and remove duplicates.
+        pool = list(set(possible_words_only + probe_pool))
+
+    else:
+        # For larger lists, coverage scoring is a faster heuristic.
+        scorer = lambda w: score_coverage(w, overall_distribution)
+        
+        # At this stage, any word of the correct length is a candidate.
+        pool = [w for w, _ in word_list if len(w) == word_length]
+
+    # Score all words in the chosen pool. This can be slow for the coverage
+    # case, but it's run in a background thread in the GUI.
+    scores = [(w, scorer(w)) for w in pool]
+    scores.sort(key=lambda x: x[1], reverse=True)
+    
+    return scores[:top_n]
