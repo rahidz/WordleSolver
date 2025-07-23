@@ -1,0 +1,189 @@
+import os
+
+def parse_misplaced_letters(s):
+    """
+    Parses the misplaced letters input.
+    Example input: "a:1,3; e:2" 
+    Returns a dictionary mapping each letter to a set of 0-indexed positions
+    where it must NOT appear, but must appear somewhere else.
+    """
+    misplaced = {}
+    if not s.strip():
+        return misplaced
+
+    entries = s.split(";")
+    for entry in entries:
+        if ":" in entry:
+            letter_part, pos_part = entry.split(":")
+            letter = letter_part.strip().lower()
+            # Collect positions (convert from 1-based to 0-based)
+            positions = {
+                int(p.strip()) - 1
+                for p in pos_part.split(",")
+                if p.strip().isdigit()
+            }
+            if letter in misplaced:
+                misplaced[letter].update(positions)
+            else:
+                misplaced[letter] = positions
+
+    return misplaced
+
+
+def filter_word(word, word_length, pattern, not_allowed, misplaced_dict):
+    """
+    Returns True if `word` satisfies all constraints:
+      - word_length: exact length if not None
+      - pattern: underscores '_' are wildcards, other letters must match
+      - not_allowed: none of these letters appear
+      - misplaced_dict: each letter must appear somewhere, but not in the forbidden indices
+    """
+    # 1) Length check
+    if word_length is not None and len(word) != word_length:
+        return False
+
+    lower = word.lower()
+
+    # 2) Pattern check
+    for i, ch in enumerate(pattern):
+        if ch != "_" and lower[i] != ch.lower():
+            return False
+
+    # 3) Excluded letters
+    for ch in not_allowed.lower():
+        if ch and ch in lower:
+            return False
+
+    # 4) Misplaced letters check
+    for letter, bad_positions in misplaced_dict.items():
+        if letter not in lower:
+            return False
+        for pos in bad_positions:
+            # if letter is in a forbidden spot, reject
+            if 0 <= pos < len(lower) and lower[pos] == letter:
+                return False
+
+    return True
+
+
+def compute_letter_distributions(results):
+    """
+    Given `results` as a list of (word, frequency),
+    returns two dicts:
+      - overall: letter -> total weighted count across all words
+      - positional: pos -> { letter -> weighted count at that position }
+    """
+    overall = {}
+    positional = {}
+
+    if not results:
+        return overall, positional
+
+    # assume all words same length
+    length = len(results[0][0])
+    for pos in range(length):
+        positional[pos] = {}
+
+    for word, freq in results:
+        lw = word.lower()
+        for i, ch in enumerate(lw):
+            overall[ch] = overall.get(ch, 0) + freq
+            positional[i][ch] = positional[i].get(ch, 0) + freq
+
+    return overall, positional
+
+
+# ——————————————————————————————————————————————————————
+# Pre-load dictionary into memory on first use
+_WORD_LIST = None
+
+def _load_word_list(filename="frequency.txt"):
+    """
+    Loads “word,frequency” pairs from the given CSV once,
+    caches them in _WORD_LIST, and returns the list.
+    """
+    global _WORD_LIST
+    if _WORD_LIST is None:
+        _WORD_LIST = []
+        filepath = os.path.join(os.path.dirname(__file__), filename)
+        with open(filepath, encoding="utf-8") as f:
+            for line in f:
+                parts = line.strip().split(",")
+                if len(parts) != 2:
+                    continue
+                word, freq_str = parts[0].strip(), parts[1].strip()
+                try:
+                    frequency = int(freq_str)
+                except ValueError:
+                    continue
+                _WORD_LIST.append((word, frequency))
+    return _WORD_LIST
+
+
+def filter_words(file_path, word_length, pattern, not_allowed, misplaced_input):
+    """
+    Returns a list of (word, frequency) tuples matching the given constraints.
+    The word list is loaded from disk only once and then cached in memory.
+    
+    Args:
+      file_path      : Filename (e.g. 'frequency.txt') in this module’s folder.
+      word_length    : Desired word length (int) or None.
+      pattern        : String of length N with '_' for unknowns and letters for known spots.
+      not_allowed    : String of letters that must NOT appear.
+      misplaced_input: String like 'a:1,3; e:2' for letters in the word but not those positions.
+    
+    Returns:
+      List of (word, frequency), sorted by frequency descending.
+    """
+    # 1) Load or retrieve the cached word list
+    word_list = _load_word_list(file_path)
+
+    # 2) Parse misplaced‐letters constraints
+    misplaced_dict = parse_misplaced_letters(misplaced_input)
+
+    # 3) Filter entirely in memory
+    results = [
+        (w, f)
+        for (w, f) in word_list
+        if filter_word(w, word_length, pattern, not_allowed, misplaced_dict)
+    ]
+
+    # 4) Sort by descending frequency
+    results.sort(key=lambda x: x[1], reverse=True)
+    return results
+def find_words_from_remaining_letters(word_list, used_letters, not_allowed_letters, overall_distribution, word_length=None, min_frequency=0):
+    """
+    Finds words that can be formed from the set of remaining (unused) letters.
+
+    Args:
+      word_list: The full list of (word, frequency) tuples.
+      used_letters: A set of letters that have been used (green or yellow).
+      not_allowed_letters: A set of letters known to not be in the word.
+      overall_distribution: A dict mapping letters to their frequency count.
+      word_length: The length of words to find.
+      min_frequency: The minimum frequency a word must have to be included.
+
+    Returns:
+      A list of (word, score) tuples for words that can be formed.
+    """
+    # Letters to build words from are ones not used (green/yellow) and not disallowed (gray)
+    available_letters = set("abcdefghijklmnopqrstuvwxyz") - used_letters - not_allowed_letters
+    
+    valid_words = []
+    for word, frequency in word_list:
+        # The word must have the correct length
+        if word_length is not None and len(word) != word_length:
+            continue
+
+        # Check against minimum frequency
+        if frequency < min_frequency:
+            continue
+        
+        # All letters in the word must be from the available set
+        if set(word).issubset(available_letters):
+            # Calculate the score based on the sum of letter counts
+            score = sum(overall_distribution.get(letter, 0) for letter in word)
+            valid_words.append((word, score))
+            
+    valid_words.sort(key=lambda x: x[1], reverse=True)
+    return valid_words
