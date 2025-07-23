@@ -194,9 +194,9 @@ class WordleSolver:
         return valid_words
 
     def _score_coverage(self, word: str, overall_distribution: Distribution) -> int:
-        """Sum of letter frequencies, counting each letter once."""
+        """Sum of letter frequencies for all letters in the word."""
         return sum(overall_distribution.get(ch, 0)
-                   for ch in set(word.lower()))
+                   for ch in word.lower())
 
     def _score_weighted_entropy(self, guess: str, possible_words: Results) -> float:
         """Entropy where each answer is weighted by its frequency."""

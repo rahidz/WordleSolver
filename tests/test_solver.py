@@ -19,12 +19,29 @@ class TestWordleSolver(unittest.TestCase):
             f.write("drape,80\n")
             f.write("earth,120\n")
             f.write("react,130\n")
+            f.write("eerie,70\n")
         
         self.solver = WordleSolver("test_freq.txt")
 
     def tearDown(self):
         """Clean up the dummy frequency file after each test."""
         os.remove("test_freq.txt")
+
+    def test_score_coverage_with_duplicates(self):
+        """Test that _score_coverage correctly handles duplicate letters."""
+        # 'e' is the most frequent letter in our test set
+        distribution = {'e': 50, 'r': 20, 'a': 15, 't': 10, 'c': 5}
+        
+        # "eerie" has three 'e's, "react" has one
+        score_eerie = self.solver._score_coverage("eerie", distribution)
+        score_react = self.solver._score_coverage("react", distribution)
+        
+        # Expected scores:
+        # eerie: 50 (e) + 50 (e) + 20 (r) + 50 (e) = 170
+        # react: 20 (r) + 50 (e) + 15 (a) + 5 (c) + 10 (t) = 100
+        self.assertEqual(score_eerie, 170)
+        self.assertEqual(score_react, 100)
+        self.assertGreater(score_eerie, score_react)
 
     def test_example(self):
         """A placeholder test to ensure the setup is working."""
@@ -59,7 +76,7 @@ class TestWordleSolver(unittest.TestCase):
 
         # Not allowed filtering
         results = self.solver.filter_words(5, "_____", "c", "")
-        self.assertEqual([r[0] for r in results], ["earth", "apple", "baker", "drape"])
+        self.assertEqual([r[0] for r in results], ["earth", "apple", "baker", "drape", "eerie"])
 
         # Misplaced filtering
         results = self.solver.filter_words(5, "_____", "", "a:2")

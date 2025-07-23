@@ -33,9 +33,10 @@ This is a powerful and flexible solver for Wordle and similar word puzzles. It p
 3.  **Enter Your Guesses**:
     *   Type the letters of your guess into the grid.
     *   Click on each letter's cell to cycle through the clue colors:
-        *   **White/Gray (Default)**: The letter is not in the word (a "gray" letter). You can also add these letters to the "Letters not in word" field.
+        *   **Gray (Default)**: The letter is not in the word.
         *   **Yellow**: The letter is in the word but in the wrong position.
         *   **Green**: The letter is correct and in the right position.
+    *   You can also manually add letters to the "Letters not in word" field.
 
 4.  **Filter Words**:
     Click the **"Filter Words"** button. The application will process the clues and display the results.
@@ -51,10 +52,18 @@ This is a powerful and flexible solver for Wordle and similar word puzzles. It p
 
 ## Project Files
 
-*   [`gui.py`](d:/Wordle/WordleSolver/gui.py:1): The main application file that defines the `WordleUI` class and runs the `tkinter` GUI.
-*   [`solver.py`](d:/Wordle/WordleSolver/solver.py:1): Defines the `WordleSolver` class, which encapsulates the core logic for loading the word list, filtering words, and scoring guesses.
-*   [`frequency.txt`](d:/Wordle/WordleSolver/frequency.txt): The dictionary file, containing a list of words and their corresponding frequencies. This file is required for the solver to work.
-*   [`sorted_filtered_words.txt`](d:/Wordle/WordleSolver/sorted_filtered_words.txt): An output file where the results of the last filtering operation are saved.
+*   [`gui.py`](gui.py): The main application file that defines the `WordleUI` class and runs the `tkinter` GUI.
+*   [`solver.py`](solver.py): Defines the `WordleSolver` class, which encapsulates the core logic for loading the word list, filtering words, and scoring guesses.
+*   [`frequency.txt`](frequency.txt): The dictionary file, containing a list of words and their corresponding frequencies. This file is required for the solver to work.
+*   [`tests/test_solver.py`](tests/test_solver.py): Contains unit tests for the `WordleSolver` class and helper functions.
+
+## Testing
+
+The project includes a suite of unit tests for the core solver logic. To run the tests, navigate to the project's root directory and run the following command:
+
+```bash
+python -m unittest tests/test_solver.py
+```
 
 ## Technical Implementation
 
@@ -62,8 +71,8 @@ This is a powerful and flexible solver for Wordle and similar word puzzles. It p
 *   **Concurrency**: Filtering operations are run in a separate thread using `concurrent.futures.ThreadPoolExecutor` to prevent the UI from freezing during intensive calculations.
 *   **Performance**: The solver uses bitmasking to perform high-speed filtering of the word list. Each word and the set of excluded letters are represented as bitmasks, allowing for rapid checks using bitwise operations.
 *   **Guess Scoring**: The "Best Guesses" are determined by one of two algorithms, depending on the number of possible words remaining:
-    *   `score_weighted_entropy`: Calculates the expected information gain for each potential guess, weighted by word frequency. This is computationally intensive and used when the list of possibilities is small.
-    *   `score_coverage`: A faster heuristic that scores guesses based on the frequency of their letters in the remaining word list. This is used for larger possibility sets.
+    *   `_score_weighted_entropy`: Calculates the expected information gain for each potential guess, weighted by word frequency. This is computationally intensive and used when the list of possibilities is small.
+    *   `_score_coverage`: A faster heuristic that scores guesses based on the frequency of their letters in the remaining word list. This is used for larger possibility sets.
 
 ## Requirements
 
