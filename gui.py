@@ -1,10 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from solver import WordleSolver
+from solver import WordleSolver, Results, Distribution
 import concurrent.futures
+from typing import List, Tuple, Dict, Set, Optional, Any
 
 # --- Constants for UI colors ---
-COLORS = {
+COLORS: Dict[str, Tuple[str, str]] = {
     "default": ("white", "black"),
     "green": ("#6aaa64", "white"),
     "yellow": ("#c9b458", "white"),
@@ -12,15 +13,15 @@ COLORS = {
 }
 
 class WordleUI:
-    def __init__(self, root):
+    def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.solver = WordleSolver()
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        self.letter_cells = []
+        self.letter_cells: List['LetterCell'] = []
 
         self.setup_ui()
 
-    def setup_ui(self):
+    def setup_ui(self) -> None:
         self.root.title("Wordle Helper")
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.grid(row=0, column=0, sticky="nsew")
@@ -85,7 +86,7 @@ class WordleUI:
         right_frame.rowconfigure(0, weight=1)
         right_frame.rowconfigure(1, weight=2)
         right_frame.columnconfigure(0, weight=1)
-    def create_treeview(self, parent, text, columns, row):
+    def create_treeview(self, parent: tk.Widget, text: str, columns: Tuple[str, ...], row: int) -> ttk.Treeview:
         frame = ttk.LabelFrame(parent, text=text, padding="5")
         if row != -1:
             frame.grid(row=row, column=0, columnspan=2, pady=10, sticky="we")
@@ -104,7 +105,7 @@ class WordleUI:
         tree.pack(side="left", fill="both", expand=True)
         return tree
 
-    def on_word_length_change(self, *args):
+    def on_word_length_change(self, *args: Any) -> None:
         try:
             length = int(self.word_length_var.get())
             if length > 0:
@@ -112,7 +113,7 @@ class WordleUI:
         except ValueError:
             pass # Ignore non-integer input
 
-    def rebuild_grid(self, word_length, rows=6):
+    def rebuild_grid(self, word_length: int, rows: int = 6) -> None:
         for widget in self.grid_frame.winfo_children():
             widget.destroy()
         self.letter_cells.clear()
@@ -125,7 +126,7 @@ class WordleUI:
                 cell.pack(side="left", padx=2)
                 self.letter_cells.append(cell)
 
-    def reset_all(self):
+    def reset_all(self) -> None:
         for cell in self.letter_cells:
             cell.reset()
         self.not_allowed_entry.delete(0, tk.END)
@@ -134,16 +135,16 @@ class WordleUI:
             for item in tree.get_children():
                 tree.delete(item)
 
-    def apply_filter(self):
+    def apply_filter(self) -> None:
         try:
             word_length = int(self.word_length_var.get())
         except ValueError:
             messagebox.showerror("Input Error", "Word Length must be an integer.")
             return
 
-        pattern_list = ["_"] * word_length
-        not_allowed_letters = set(self.not_allowed_entry.get().strip().lower())
-        misplaced_map = {}
+        pattern_list: List[str] = ["_"] * word_length
+        not_allowed_letters: Set[str] = set(self.not_allowed_entry.get().strip().lower())
+        misplaced_map: Dict[str, Set[int]] = {}
 
         for i, cell in enumerate(self.letter_cells):
             letter, state = cell.get_state()
@@ -190,7 +191,7 @@ class WordleUI:
         )
         future.add_done_callback(self.on_filter_complete)
 
-    def run_full_filter(self, word_length, pattern, not_allowed, misplaced_input, used_letters, not_allowed_letters):
+    def run_full_filter(self, word_length: int, pattern: str, not_allowed: str, misplaced_input: str, used_letters: Set[str], not_allowed_letters: Set[str]) -> Tuple[Results, Set[str], Set[str], int, List[Tuple[str, float]], Distribution]:
         min_freq = int(self.min_freq_var.get())
         filtered_results = self.solver.filter_words(
             word_length, pattern, not_allowed, misplaced_input
@@ -200,7 +201,7 @@ class WordleUI:
         
         return filtered_results, used_letters, not_allowed_letters, word_length, best_guess_list, overall_distribution
 
-    def on_filter_complete(self, future):
+    def on_filter_complete(self, future: concurrent.futures.Future) -> None:
         try:
             results, used_letters, not_allowed_letters, word_length, best_guess_list, overall_distribution = future.result()
         except Exception as e:
@@ -211,7 +212,7 @@ class WordleUI:
 
         self.root.after(0, self.update_ui, results, best_guess_list, overall_distribution, used_letters, not_allowed_letters, word_length)
 
-    def update_ui(self, results, best_guess_list, overall_distribution, used_letters, not_allowed_letters, word_length):
+    def update_ui(self, results: Results, best_guess_list: List[Tuple[str, float]], overall_distribution: Distribution, used_letters: Set[str], not_allowed_letters: Set[str], word_length: int) -> None:
         try:
             with open("sorted_filtered_words.txt", "w") as outfile:
                 for word, freq in results:
@@ -245,7 +246,7 @@ class WordleUI:
 
         self.filter_button.config(state=tk.NORMAL)
 
-    def reset_results(self):
+    def reset_results(self) -> None:
         for tree in [self.output_tree, self.letter_tree, self.best_guesses_tree, self.remaining_words_tree]:
             for item in tree.get_children():
                 tree.delete(item)
@@ -254,7 +255,7 @@ class WordleUI:
 
 # --- LetterCell Class for the input grid ---
 class LetterCell(tk.Frame):
-    def __init__(self, master, width=40, height=40, app=None):
+    def __init__(self, master: tk.Widget, width: int = 40, height: int = 40, app: Optional['WordleUI'] = None) -> None:
         super().__init__(master, width=width, height=height, borderwidth=1, relief="solid")
         self.pack_propagate(False)
         self.app = app
@@ -276,11 +277,11 @@ class LetterCell(tk.Frame):
         )
         self.entry.pack(expand=True, fill="both")
 
-        self.color_state = "default"
+        self.color_state: str = "default"
         self.entry.bind("<KeyRelease>", self.on_key_release)
         self.entry.bind("<Button-1>", self.on_click)
 
-    def _on_text_change(self, *args):
+    def _on_text_change(self, *args: Any) -> None:
         text = self.char_var.get()
         new_text = ""
         if text:
@@ -294,7 +295,7 @@ class LetterCell(tk.Frame):
             self.entry.icursor(tk.END)
             self._trace_id = self.char_var.trace_add("write", self._on_text_change)
 
-    def on_key_release(self, event):
+    def on_key_release(self, event: tk.Event) -> None:
         # Set initial color to gray if a letter is typed, or back to default if empty
         if self.char_var.get() and self.color_state == "default":
             self.set_color("gray")
@@ -333,7 +334,7 @@ class LetterCell(tk.Frame):
             if next_widget:
                 next_widget.focus_set()
 
-    def on_click(self, event):
+    def on_click(self, event: tk.Event) -> None:
         # Cycle through colors on click: Gray -> Yellow -> Green -> Gray
         if self.color_state == "gray":
             self.set_color("yellow")
@@ -343,18 +344,18 @@ class LetterCell(tk.Frame):
             self.set_color("gray")
         # Do nothing if state is "default" (cell is empty)
 
-    def set_color(self, color_name):
+    def set_color(self, color_name: str) -> None:
         self.color_state = color_name
         bg, fg = COLORS[color_name]
         self.entry.config(bg=bg, fg=fg, insertbackground=fg)
 
-    def get_letter(self):
+    def get_letter(self) -> str:
         return self.char_var.get().lower()
 
-    def get_state(self):
+    def get_state(self) -> Tuple[str, str]:
         return self.get_letter(), self.color_state
 
-    def reset(self):
+    def reset(self) -> None:
         self.char_var.set("")
         self.set_color("default")
 
