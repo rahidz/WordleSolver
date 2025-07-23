@@ -252,6 +252,24 @@ def score_entropy(guess, possible_words):
         ent -= p * math.log2(p)
     return ent
 
+def score_weighted_entropy(guess, possible_words):
+    """Entropy where each answer is weighted by its frequency."""
+    total_mass = sum(freq for _, freq in possible_words)
+    if not total_mass:
+        return 0.0
+        
+    pattern_cnt = Counter()
+
+    for answer, freq in possible_words:
+        pat = get_feedback_pattern(guess, answer)
+        pattern_cnt[pat] += freq
+
+    ent = 0.0
+    for mass in pattern_cnt.values():
+        p = mass / total_mass
+        ent -= p * math.log2(p)
+    return ent
+
 def best_guesses(
     possible_words, word_list, overall_distribution, cutoff=250, top_n=15, probe_limit=2000
 ):
@@ -266,18 +284,11 @@ def best_guesses(
 
     # Decide on the scoring function and the pool of candidates to test.
     if cutoff is None or len(possible_words) <= cutoff:
-        # For smaller possibility lists, use the more accurate entropy score.
-        scorer = lambda w: score_entropy(w, possible_words_only)
-
-        # The best guess might be a "probe" word not in the possible list.
-        # So, we create a candidate pool of possible words + the most common
-        # words from the full dictionary to act as probes.
-        probe_pool = [
-            w for w, _ in word_list[:probe_limit] if len(w) == word_length
-        ]
+        # For smaller possibility lists, use the more accurate weighted entropy score.
+        scorer = lambda w: score_weighted_entropy(w, possible_words)
         
-        # Combine the lists and remove duplicates.
-        pool = list(set(possible_words_only + probe_pool))
+        # The best guess is one of the possible words. Probes are not used.
+        pool = possible_words_only
 
     else:
         # For larger lists, coverage scoring is a faster heuristic.
