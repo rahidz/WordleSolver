@@ -8,6 +8,7 @@ COLORS = {
     "default": ("white", "black"),
     "green": ("#6aaa64", "white"),
     "yellow": ("#c9b458", "white"),
+    "gray": ("#808080", "white"),  # Not in word
 }
 
 class WordleUI:
@@ -148,7 +149,7 @@ class WordleUI:
             letter, state = cell.get_state()
             pos_1_based = (i % word_length) + 1
 
-            if not letter or state == "ignored":
+            if not letter or state == "default":
                 continue
 
             if state == "green":
@@ -160,7 +161,7 @@ class WordleUI:
                 if letter not in misplaced_map:
                     misplaced_map[letter] = set()
                 misplaced_map[letter].add(pos_1_based)
-            else:
+            elif state == "gray":
                 not_allowed_letters.add(letter)
 
         for p_letter in pattern_list:
@@ -190,11 +191,12 @@ class WordleUI:
         future.add_done_callback(self.on_filter_complete)
 
     def run_full_filter(self, word_length, pattern, not_allowed, misplaced_input, used_letters, not_allowed_letters):
+        min_freq = int(self.min_freq_var.get())
         filtered_results = self.solver.filter_words(
             word_length, pattern, not_allowed, misplaced_input
         )
         overall_distribution, _ = self.solver.compute_letter_distributions(filtered_results)
-        best_guess_list = self.solver.best_guesses(filtered_results, overall_distribution)
+        best_guess_list = self.solver.best_guesses(filtered_results, overall_distribution, min_frequency=min_freq)
         
         return filtered_results, used_letters, not_allowed_letters, word_length, best_guess_list, overall_distribution
 
@@ -257,8 +259,12 @@ class LetterCell(tk.Frame):
         self.pack_propagate(False)
         self.app = app
 
+        self.char_var = tk.StringVar()
+        self._trace_id = self.char_var.trace_add("write", self._on_text_change)
+
         self.entry = tk.Entry(
             self,
+            textvariable=self.char_var,
             justify="center",
             font=("Helvetica", 16, "bold"),
             borderwidth=0,
@@ -274,7 +280,27 @@ class LetterCell(tk.Frame):
         self.entry.bind("<KeyRelease>", self.on_key_release)
         self.entry.bind("<Button-1>", self.on_click)
 
+    def _on_text_change(self, *args):
+        text = self.char_var.get()
+        new_text = ""
+        if text:
+            char = text[-1]
+            if char.isalpha():
+                new_text = char.upper()
+
+        if self.char_var.get() != new_text:
+            self.char_var.trace_vdelete("w", self._trace_id)
+            self.char_var.set(new_text)
+            self.entry.icursor(tk.END)
+            self._trace_id = self.char_var.trace_add("write", self._on_text_change)
+
     def on_key_release(self, event):
+        # Set initial color to gray if a letter is typed, or back to default if empty
+        if self.char_var.get() and self.color_state == "default":
+            self.set_color("gray")
+        elif not self.char_var.get():
+            self.set_color("default")
+
         if not self.app:
             return
 
@@ -301,39 +327,35 @@ class LetterCell(tk.Frame):
             down_index = current_index + word_length
             if down_index < len(self.app.letter_cells):
                 self.app.letter_cells[down_index].entry.focus_set()
-        elif self.entry.get():
+        # Auto-tab to next cell only on character entry
+        elif self.char_var.get() and event.keysym not in ["BackSpace", "Delete", "Tab", "Shift_L", "Shift_R"]:
             next_widget = self.tk_focusNext()
             if next_widget:
                 next_widget.focus_set()
 
     def on_click(self, event):
-        # Cycle through colors on click
-        if self.color_state == "default":
-            self.set_color("ignored")
-        elif self.color_state == "ignored":
+        # Cycle through colors on click: Gray -> Yellow -> Green -> Gray
+        if self.color_state == "gray":
             self.set_color("yellow")
         elif self.color_state == "yellow":
             self.set_color("green")
-        else:  # Green
-            self.set_color("default")
+        elif self.color_state == "green":
+            self.set_color("gray")
+        # Do nothing if state is "default" (cell is empty)
 
     def set_color(self, color_name):
         self.color_state = color_name
-        
-        # Use "default" colors for the "ignored" state
-        effective_color_name = "default" if color_name == "ignored" else color_name
-        bg, fg = COLORS[effective_color_name]
-        
+        bg, fg = COLORS[color_name]
         self.entry.config(bg=bg, fg=fg, insertbackground=fg)
 
     def get_letter(self):
-        return self.entry.get().lower()
+        return self.char_var.get().lower()
 
     def get_state(self):
         return self.get_letter(), self.color_state
 
     def reset(self):
-        self.entry.delete(0, tk.END)
+        self.char_var.set("")
         self.set_color("default")
 
 if __name__ == "__main__":

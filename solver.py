@@ -209,7 +209,7 @@ class WordleSolver:
             ent -= p * math.log2(p)
         return ent
 
-    def best_guesses(self, possible_words, overall_distribution, cutoff=250, top_n=15):
+    def best_guesses(self, possible_words, overall_distribution, cutoff=250, top_n=15, min_frequency=0):
         """
         Chooses a scoring strategy and returns the top N best guesses.
         """
@@ -224,7 +224,10 @@ class WordleSolver:
             pool = possible_words_only
         else:
             scorer = lambda w: self._score_coverage(w, overall_distribution)
-            pool = [d['word'] for d in self.word_data_list if len(d['word']) == word_length]
+            pool = [
+                d['word'] for d in self.word_data_list
+                if len(d['word']) == word_length and d['freq'] >= min_frequency
+            ]
 
         scores = [(w, scorer(w)) for w in pool]
         scores.sort(key=lambda x: x[1], reverse=True)
