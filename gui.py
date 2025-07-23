@@ -122,10 +122,13 @@ def run_full_filter(word_length, pattern, not_allowed, misplaced_input, used_let
 
 def apply_filter():
     # Retrieve user inputs from the GUI.
-    word_length_input = word_length_entry.get().strip()
+    try:
+        word_length = int(word_length_var.get())
+    except ValueError:
+        messagebox.showerror("Input Error", "Word Length must be an integer.")
+        return
+
     # --- Derive filter inputs from the grid state ---
-    # --- Derive filter inputs from the grid state ---
-    word_length = int(word_length_var.get())
     pattern_list = ["_"] * word_length
     not_allowed_letters = set(not_allowed_entry.get().strip().lower())
     misplaced_map = {}
@@ -163,15 +166,6 @@ def apply_filter():
         f"{letter}:{','.join(map(str, sorted(positions)))}"
         for letter, positions in misplaced_map.items()
     )
-
-    # Convert word length to integer if provided.
-    word_length = None
-    if word_length_input:
-        try:
-            word_length = int(word_length_input)
-        except ValueError:
-            messagebox.showerror("Input Error", "Word Length must be an integer.")
-            return
 
     # Disable filter button and show status
     filter_button.config(state=tk.DISABLED)

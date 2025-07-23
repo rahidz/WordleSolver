@@ -2,7 +2,20 @@ import os
 
 import math
 from collections import Counter
-from collections import Counter
+
+
+# --- Bitmasking Helpers ---
+def get_char_mask(char):
+    """Returns a 26-bit integer mask for a single character."""
+    # Assumes char is 'a'-'z'
+    return 1 << (ord(char) - ord('a'))
+
+def get_word_mask(word):
+    """Computes a bitmask representing the set of unique letters in a word."""
+    mask = 0
+    for char in word.lower():
+        mask |= 1 << (ord(char) - ord('a'))
+    return mask
 def parse_misplaced_letters(s):
     """
     Parses the misplaced letters input.
@@ -33,36 +46,35 @@ def parse_misplaced_letters(s):
     return misplaced
 
 
-def filter_word(word, word_length, pattern, not_allowed, misplaced_dict):
+def filter_word_with_mask(word_data, word_length, pattern, not_allowed_mask, misplaced_dict):
     """
-    Returns True if `word` satisfies all constraints:
-      - word_length: exact length if not None
-      - pattern: underscores '_' are wildcards, other letters must match
-      - not_allowed: none of these letters appear
-      - misplaced_dict: each letter must appear somewhere, but not in the forbidden indices
+    Returns True if the word from `word_data` satisfies all constraints.
+    Uses pre-computed bitmasks for faster filtering.
     """
+    word = word_data["word"]
+    word_mask = word_data["mask"]
+
     # 1) Length check
     if word_length is not None and len(word) != word_length:
         return False
 
+    # 2) Excluded letters (fast check)
+    if word_mask & not_allowed_mask:
+        return False
+
+    # 3) Pattern check
     lower = word.lower()
-
-    # 2) Pattern check
-    for i, ch in enumerate(pattern):
-        if ch != "_" and lower[i] != ch.lower():
-            return False
-
-    # 3) Excluded letters
-    for ch in not_allowed.lower():
-        if ch and ch in lower:
+    for i, p_char in enumerate(pattern):
+        if p_char != "_" and lower[i] != p_char.lower():
             return False
 
     # 4) Misplaced letters check
     for letter, bad_positions in misplaced_dict.items():
-        if letter not in lower:
+        # Check if letter is present in the word (fast)
+        if not (word_mask & get_char_mask(letter)):
             return False
+        # Check if it's in a bad spot (slower)
         for pos in bad_positions:
-            # if letter is in a forbidden spot, reject
             if 0 <= pos < len(lower) and lower[pos] == letter:
                 return False
 
@@ -98,16 +110,17 @@ def compute_letter_distributions(results):
 
 # ——————————————————————————————————————————————————————
 # Pre-load dictionary into memory on first use
-_WORD_LIST = None
+_WORD_DATA = None
 
 def _load_word_list(filename="frequency.txt"):
     """
-    Loads “word,frequency” pairs from the given CSV once,
-    caches them in _WORD_LIST, and returns the list.
+    Loads word data from the given file once, caches it, and returns the list.
+    Each entry will be a dictionary containing the word, its frequency,
+    and pre-computed bitmasks for efficient filtering.
     """
-    global _WORD_LIST
-    if _WORD_LIST is None:
-        _WORD_LIST = []
+    global _WORD_DATA
+    if _WORD_DATA is None:
+        _WORD_DATA = []
         filepath = os.path.join(os.path.dirname(__file__), filename)
         with open(filepath, encoding="utf-8") as f:
             for line in f:
@@ -119,8 +132,14 @@ def _load_word_list(filename="frequency.txt"):
                     frequency = int(freq_str)
                 except ValueError:
                     continue
-                _WORD_LIST.append((word, frequency))
-    return _WORD_LIST
+                
+                # Pre-compute and store bitmasks
+                _WORD_DATA.append({
+                    "word": word,
+                    "freq": frequency,
+                    "mask": get_word_mask(word),
+                })
+    return _WORD_DATA
 
 
 def filter_words(file_path, word_length, pattern, not_allowed, misplaced_input):
@@ -138,18 +157,22 @@ def filter_words(file_path, word_length, pattern, not_allowed, misplaced_input):
     Returns:
       List of (word, frequency), sorted by frequency descending.
     """
-    # 1) Load or retrieve the cached word list
-    word_list = _load_word_list(file_path)
+    # 1) Load or retrieve the cached word data with masks
+    word_data_list = _load_word_list(file_path)
 
-    # 2) Parse misplaced‐letters constraints
+    # 2) Pre-compute masks for constraints
+    not_allowed_mask = get_word_mask(not_allowed)
     misplaced_dict = parse_misplaced_letters(misplaced_input)
 
     # 3) Filter entirely in memory
-    results = [
-        (w, f)
-        for (w, f) in word_list
-        if filter_word(w, word_length, pattern, not_allowed, misplaced_dict)
+    results_data = [
+        wd
+        for wd in word_data_list
+        if filter_word_with_mask(wd, word_length, pattern, not_allowed_mask, misplaced_dict)
     ]
+
+    # Convert back to (word, frequency) tuples for compatibility
+    results = [(d["word"], d["freq"]) for d in results_data]
 
     # 4) Sort by descending frequency
     results.sort(key=lambda x: x[1], reverse=True)
@@ -159,7 +182,7 @@ def find_words_from_remaining_letters(word_list, used_letters, not_allowed_lette
     Finds words that can be formed from the set of remaining (unused) letters.
 
     Args:
-      word_list: The full list of (word, frequency) tuples.
+      word_list: The full list of word data dictionaries.
       used_letters: A set of letters that have been used (green or yellow).
       not_allowed_letters: A set of letters known to not be in the word.
       overall_distribution: A dict mapping letters to their frequency count.
@@ -171,9 +194,14 @@ def find_words_from_remaining_letters(word_list, used_letters, not_allowed_lette
     """
     # Letters to build words from are ones not used (green/yellow) and not disallowed (gray)
     available_letters = set("abcdefghijklmnopqrstuvwxyz") - used_letters - not_allowed_letters
+    available_mask = get_word_mask("".join(available_letters))
     
     valid_words = []
-    for word, frequency in word_list:
+    for word_data in word_list:
+        word = word_data["word"]
+        frequency = word_data["freq"]
+        word_mask = word_data["mask"]
+        
         # The word must have the correct length
         if word_length is not None and len(word) != word_length:
             continue
@@ -182,10 +210,10 @@ def find_words_from_remaining_letters(word_list, used_letters, not_allowed_lette
         if frequency < min_frequency:
             continue
         
-        # All letters in the word must be from the available set
-        if set(word).issubset(available_letters):
-            # Calculate the score based on the sum of letter counts
-            score = sum(overall_distribution.get(letter, 0) for letter in word)
+        # All letters in the word must be from the available set (subset check)
+        if (word_mask & available_mask) == word_mask:
+            # Calculate the score based on the sum of letter counts for unique letters
+            score = sum(overall_distribution.get(letter, 0) for letter in set(word))
             valid_words.append((word, score))
             
     valid_words.sort(key=lambda x: x[1], reverse=True)
@@ -295,7 +323,7 @@ def best_guesses(
         scorer = lambda w: score_coverage(w, overall_distribution)
         
         # At this stage, any word of the correct length is a candidate.
-        pool = [w for w, _ in word_list if len(w) == word_length]
+        pool = [d['word'] for d in word_list if len(d['word']) == word_length]
 
     # Score all words in the chosen pool. This can be slow for the coverage
     # case, but it's run in a background thread in the GUI.
