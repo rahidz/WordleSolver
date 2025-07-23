@@ -5,6 +5,7 @@ rated,7499372
 mater,3215747
 taper,1829963
 pater,1726444
+cater,1523233
 eater,1161877
 taker,891588
 rater,547590
@@ -42,11 +43,13 @@ taver,5169
 ratei,4859
 oater,4577
 ratem,3971
+ratec,3304
 tazer,2893
 tader,2306
 aater,2096
 ratef,2089
 rateo,2015
+tacer,1889
 qater,1786
 ratex,1757
 tawer,1735

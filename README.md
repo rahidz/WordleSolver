@@ -51,8 +51,8 @@ This is a powerful and flexible solver for Wordle and similar word puzzles. It p
 
 ## Project Files
 
-*   [`gui.py`](d:/Wordle/WordleSolver/gui.py:1): The main application file that runs the `tkinter` GUI.
-*   [`filters.py`](d:/Wordle/WordleSolver/filters.py:1): Contains the core logic for loading the word list and filtering it based on user-provided clues.
+*   [`gui.py`](d:/Wordle/WordleSolver/gui.py:1): The main application file that defines the `WordleUI` class and runs the `tkinter` GUI.
+*   [`solver.py`](d:/Wordle/WordleSolver/solver.py:1): Defines the `WordleSolver` class, which encapsulates the core logic for loading the word list, filtering words, and scoring guesses.
 *   [`frequency.txt`](d:/Wordle/WordleSolver/frequency.txt): The dictionary file, containing a list of words and their corresponding frequencies. This file is required for the solver to work.
 *   [`sorted_filtered_words.txt`](d:/Wordle/WordleSolver/sorted_filtered_words.txt): An output file where the results of the last filtering operation are saved.
 
