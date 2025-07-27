@@ -193,10 +193,20 @@ class WordleSolver:
         valid_words.sort(key=lambda x: x[1], reverse=True)
         return valid_words
 
-    def _score_coverage(self, word: str, overall_distribution: Distribution) -> int:
-        """Sum of letter frequencies for all letters in the word."""
-        return sum(overall_distribution.get(ch, 0)
-                   for ch in word.lower())
+    def _score_coverage(self, word: str, overall_distribution: Distribution) -> float:
+        """
+        Coverage score that favors probing *distinct* high-mass letters.
+        - Uses unique letters to avoid rewarding duplicates.
+        - Applies a small penalty for repeated letters so words like 'ooooo'
+          are strongly deprioritized when 'o' is common.
+        """
+        w = word.lower()
+        uniq = set(w)
+        base = sum(overall_distribution.get(ch, 0) for ch in uniq)
+        repeats = len(w) - len(uniq)
+        # Each extra repeat reduces the score by 12% of the base.
+        penalty = 0.12 * repeats * base
+        return base - penalty
 
     def _score_weighted_entropy(self, guess: str, possible_words: Results) -> float:
         """Entropy where each answer is weighted by its frequency."""
