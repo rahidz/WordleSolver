@@ -165,9 +165,20 @@ class WordleUI:
             elif state == "gray":
                 not_allowed_letters.add(letter)
 
-        for p_letter in pattern_list:
-            if p_letter != "_" and p_letter in not_allowed_letters:
-                not_allowed_letters.remove(p_letter)
+        # --- Contradiction Checks ---
+        yellow_letters = set(misplaced_map.keys())
+        green_letters = {p for p in pattern_list if p != "_"}
+
+        # A letter can't be both yellow and gray.
+        yellow_gray_contradiction = yellow_letters.intersection(not_allowed_letters)
+        if yellow_gray_contradiction:
+            msg = f"Contradiction for letter(s): {', '.join(yellow_gray_contradiction)}. A letter cannot be both misplaced (yellow) and not in the word (gray)."
+            messagebox.showerror("Input Error", msg)
+            return
+
+        # Remove green letters from the not_allowed set
+        not_allowed_letters -= green_letters
+
 
         pattern_input = "".join(pattern_list)
         not_allowed_input = "".join(sorted(list(not_allowed_letters)))
@@ -290,13 +301,15 @@ class LetterCell(tk.Frame):
                 new_text = char.upper()
 
         if self.char_var.get() != new_text:
+            # keep this callback rebind dance to avoid recursion
             self.char_var.trace_vdelete("w", self._trace_id)
             self.char_var.set(new_text)
             self.entry.icursor(tk.END)
             self._trace_id = self.char_var.trace_add("write", self._on_text_change)
+        # NOTE: No focus movement here anymore.
 
     def on_key_release(self, event: tk.Event) -> None:
-        # Set initial color to gray if a letter is typed, or back to default if empty
+        # Color defaults
         if self.char_var.get() and self.color_state == "default":
             self.set_color("gray")
         elif not self.char_var.get():
@@ -305,34 +318,45 @@ class LetterCell(tk.Frame):
         if not self.app:
             return
 
-        # Move focus based on key press
+        word_length = int(self.app.word_length_var.get())
+        current_index = self.app.letter_cells.index(self)
+
+        # Navigation keys first
         if event.keysym == "Left":
-            prev_widget = self.tk_focusPrev()
-            if prev_widget:
-                prev_widget.focus_set()
-        elif event.keysym == "Right":
-            next_widget = self.tk_focusNext()
-            if next_widget:
-                next_widget.focus_set()
-        elif event.keysym == "Up":
-            # Manually navigate up
-            current_index = self.app.letter_cells.index(self)
-            word_length = int(self.app.word_length_var.get())
+            if current_index > 0:
+                self.app.letter_cells[current_index - 1].entry.focus_set()
+            return
+        if event.keysym == "Right":
+            if current_index + 1 < len(self.app.letter_cells):
+                self.app.letter_cells[current_index + 1].entry.focus_set()
+            return
+        if event.keysym == "Up":
             up_index = current_index - word_length
             if up_index >= 0:
                 self.app.letter_cells[up_index].entry.focus_set()
-        elif event.keysym == "Down":
-            # Manually navigate down
-            current_index = self.app.letter_cells.index(self)
-            word_length = int(self.app.word_length_var.get())
+            return
+        if event.keysym == "Down":
             down_index = current_index + word_length
             if down_index < len(self.app.letter_cells):
                 self.app.letter_cells[down_index].entry.focus_set()
-        # Auto-tab to next cell only on character entry
-        elif self.char_var.get() and event.keysym not in ["BackSpace", "Delete", "Tab", "Shift_L", "Shift_R"]:
-            next_widget = self.tk_focusNext()
-            if next_widget:
-                next_widget.focus_set()
+            return
+
+        # Backspace: if this cell is empty, jump back and clear previous
+        if event.keysym == "BackSpace":
+            if not self.char_var.get() and current_index > 0:
+                prev_cell = self.app.letter_cells[current_index - 1]
+                prev_cell.entry.focus_set()
+                prev_cell.char_var.set("")
+                prev_cell.set_color("default")
+            return
+
+        # If a valid letter was typed, go to the next cell
+        # event.char can be '' for non-printables; rely on content too
+        if self.char_var.get():
+            next_index = current_index + 1
+            if next_index < len(self.app.letter_cells):
+                self.app.letter_cells[next_index].entry.focus_set()
+
 
     def on_click(self, event: tk.Event) -> None:
         # Cycle through colors on click: Gray -> Yellow -> Green -> Gray
