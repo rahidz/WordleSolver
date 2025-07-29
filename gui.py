@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+from collections import Counter
 from solver import WordleSolver, Results, Distribution
 import concurrent.futures
 from typing import List, Tuple, Dict, Set, Optional, Any
@@ -145,40 +146,78 @@ class WordleUI:
         pattern_list: List[str] = ["_"] * word_length
         not_allowed_letters: Set[str] = set(self.not_allowed_entry.get().strip().lower())
         misplaced_map: Dict[str, Set[int]] = {}
+        letter_states: Dict[str, Counter[str]] = {}  # letter -> state -> count
+        min_counts: Dict[str, int] = {}
+        exact_counts: Dict[str, int] = {}
 
-        for i, cell in enumerate(self.letter_cells):
-            letter, state = cell.get_state()
-            pos_1_based = (i % word_length) + 1
+        rows = len(self.letter_cells) // word_length
+        for r in range(rows):
+            row_letter_states = {} # letter -> state -> count
+            row_start_idx = r * word_length
+            row_end_idx = row_start_idx + word_length
+            
+            # First pass for this row: collect all cell states
+            for i in range(row_start_idx, row_end_idx):
+                cell = self.letter_cells[i]
+                letter, state = cell.get_state()
+                if not letter:
+                    continue
 
-            if not letter or state == "default":
-                continue
+                if letter not in row_letter_states:
+                    row_letter_states[letter] = Counter()
+                row_letter_states[letter][state] += 1
 
-            if state == "green":
-                if pattern_list[pos_1_based - 1] != "_" and pattern_list[pos_1_based - 1] != letter:
-                    messagebox.showerror("Input Error", f"Contradiction at position {pos_1_based}.")
-                    return
-                pattern_list[pos_1_based - 1] = letter
-            elif state == "yellow":
-                if letter not in misplaced_map:
-                    misplaced_map[letter] = set()
-                misplaced_map[letter].add(pos_1_based)
-            elif state == "gray":
-                not_allowed_letters.add(letter)
+                # Update global pattern, misplaced_map, and not_allowed_letters
+                pos_0_based = i % word_length
+                if state == "green":
+                    if pattern_list[pos_0_based] not in ("_", letter):
+                        messagebox.showerror("Input Error", f"Contradiction at position {pos_0_based + 1}.")
+                        return
+                    pattern_list[pos_0_based] = letter
+                elif state == "yellow":
+                    if letter not in misplaced_map:
+                        misplaced_map[letter] = set()
+                    misplaced_map[letter].add(pos_0_based + 1)
+                elif state == "gray":
+                    not_allowed_letters.add(letter)
 
-        # --- Contradiction Checks ---
-        yellow_letters = set(misplaced_map.keys())
+            # Second pass for this row: determine counts from this guess
+            for letter, counts in row_letter_states.items():
+                present_count = counts["green"] + counts["yellow"]
+                
+                # C. Never let any count exceed word length
+                present_count = min(present_count, word_length)
+
+                # If gray is present for this letter in this row, it's an exact count
+                if counts["gray"] > 0:
+                    exact_counts[letter] = present_count
+                # B. Don't promote to min_counts if we know an exact count
+                elif letter not in exact_counts:
+                    # A. Track per-row maxima
+                    min_counts[letter] = max(min_counts.get(letter, 0), present_count)
+
+        # --- Contradiction and Constraint Logic ---
         green_letters = {p for p in pattern_list if p != "_"}
 
-        # A letter can't be both yellow and gray.
-        yellow_gray_contradiction = yellow_letters.intersection(not_allowed_letters)
-        if yellow_gray_contradiction:
-            msg = f"Contradiction for letter(s): {', '.join(yellow_gray_contradiction)}. A letter cannot be both misplaced (yellow) and not in the word (gray)."
-            messagebox.showerror("Input Error", msg)
+        # A letter cannot be green and also be in the "not allowed" side input
+        if green_letters.intersection(not_allowed_letters):
+            conflict = green_letters.intersection(not_allowed_letters)
+            messagebox.showerror("Input Error", f"Letter(s) '{', '.join(conflict)}' cannot be both green and explicitly excluded.")
             return
 
-        # Remove green letters from the not_allowed set
+
+        # Remove letters with exact counts from the "not allowed" set.
+        # The solver will handle the exact count constraint.
+        not_allowed_letters -= set(exact_counts.keys())
+        # Green letters are implicitly not in the "not allowed" set.
         not_allowed_letters -= green_letters
 
+        # A letter can't be both green and explicitly excluded in the side panel.
+        # This is the only remaining "green" contradiction.
+        green_in_not_allowed = green_letters.intersection(set(self.not_allowed_entry.get().strip().lower()))
+        if green_in_not_allowed:
+            messagebox.showerror("Input Error", f"Letter(s) '{', '.join(green_in_not_allowed)}' cannot be both green and explicitly excluded.")
+            return
 
         pattern_input = "".join(pattern_list)
         not_allowed_input = "".join(sorted(list(not_allowed_letters)))
@@ -198,14 +237,16 @@ class WordleUI:
             not_allowed_input,
             misplaced_input,
             {l for l, s in misplaced_map.items()} | {p for p in pattern_list if p != "_"},
-            not_allowed_letters
+            not_allowed_letters,
+            exact_counts,
+            min_counts,
         )
         future.add_done_callback(self.on_filter_complete)
 
-    def run_full_filter(self, word_length: int, pattern: str, not_allowed: str, misplaced_input: str, used_letters: Set[str], not_allowed_letters: Set[str]) -> Tuple[Results, Set[str], Set[str], int, List[Tuple[str, float]], Distribution]:
+    def run_full_filter(self, word_length: int, pattern: str, not_allowed: str, misplaced_input: str, used_letters: Set[str], not_allowed_letters: Set[str], exact_counts: Dict[str, int], min_counts: Dict[str, int]) -> Tuple[Results, Set[str], Set[str], int, List[Tuple[str, float]], Distribution]:
         min_freq = int(self.min_freq_var.get())
         filtered_results = self.solver.filter_words(
-            word_length, pattern, not_allowed, misplaced_input
+            word_length, pattern, not_allowed, misplaced_input, exact_counts, min_counts
         )
         overall_distribution, _ = self.solver.compute_letter_distributions(filtered_results)
         best_guess_list = self.solver.best_guesses(filtered_results, overall_distribution, min_frequency=min_freq)

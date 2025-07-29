@@ -85,7 +85,7 @@ class WordleSolver:
 
         return misplaced
 
-    def _filter_word_with_mask(self, word_data: WordData, word_length: Optional[int], pattern: str, not_allowed_mask: int, misplaced_dict: MisplacedDict) -> bool:
+    def _filter_word_with_mask(self, word_data: WordData, word_length: Optional[int], pattern: str, not_allowed_mask: int, misplaced_dict: MisplacedDict, exact_counts: Dict[str, int], min_counts: Dict[str, int]) -> bool:
         """
         Returns True if the word from `word_data` satisfies all constraints.
         Uses pre-computed bitmasks for faster filtering.
@@ -116,22 +116,38 @@ class WordleSolver:
             for pos in bad_positions:
                 if 0 <= pos < len(lower) and lower[pos] == letter:
                     return False
+        
+        # 5) Minimum letter count check
+        if min_counts:
+            word_counts = Counter(lower)
+            for letter, floor in min_counts.items():
+                if word_counts.get(letter, 0) < floor:
+                    return False
+
+        # 6) Exact letter count check
+        if exact_counts:
+            word_counts = Counter(lower)
+            for letter, count in exact_counts.items():
+                if word_counts.get(letter, 0) != count:
+                    return False
 
         return True
 
-    def filter_words(self, word_length: Optional[int], pattern: str, not_allowed: str, misplaced_input: str) -> Results:
+    def filter_words(self, word_length: Optional[int], pattern: str, not_allowed: str, misplaced_input: str, exact_counts: Optional[Dict[str, int]] = None, min_counts: Optional[Dict[str, int]] = None) -> Results:
         """
         Returns a list of (word, frequency) tuples matching the given constraints.
         """
         # 1) Pre-compute masks for constraints
         not_allowed_mask = self._get_word_mask(not_allowed)
         misplaced_dict = self.parse_misplaced_letters(misplaced_input)
+        counts = exact_counts or {}
+        min_c = min_counts or {}
 
         # 2) Filter entirely in memory
         results_data = [
             wd
             for wd in self.word_data_list
-            if self._filter_word_with_mask(wd, word_length, pattern, not_allowed_mask, misplaced_dict)
+            if self._filter_word_with_mask(wd, word_length, pattern, not_allowed_mask, misplaced_dict, counts, min_c)
         ]
 
         # Convert back to (word, frequency) tuples
