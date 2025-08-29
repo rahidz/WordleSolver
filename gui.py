@@ -199,17 +199,21 @@ class WordleUI:
         # --- Contradiction and Constraint Logic ---
         green_letters = {p for p in pattern_list if p != "_"}
 
-        # A letter cannot be green and also be in the "not allowed" side input
+        # --- Constraint Resolution & Validation ---
+        # A letter with a known exact count (e.g., 't' appears once) should not
+        # also be in the "not allowed" set, even if a gray 'T' was entered.
+        # The solver handles the exact count, so we remove it from the set before validation.
+        not_allowed_letters -= set(exact_counts.keys())
+
+        # Now, check for the core contradiction: a letter cannot be marked as both
+        # green (present at a specific spot) and gray (not in the word at all)
+        # within the same set of guesses.
         if green_letters.intersection(not_allowed_letters):
             conflict = green_letters.intersection(not_allowed_letters)
-            messagebox.showerror("Input Error", f"Letter(s) '{', '.join(conflict)}' cannot be both green and explicitly excluded.")
+            messagebox.showerror("Input Error", f"Letter(s) '{', '.join(conflict)}' cannot be both green and gray across all guesses.")
             return
 
-
-        # Remove letters with exact counts from the "not allowed" set.
-        # The solver will handle the exact count constraint.
-        not_allowed_letters -= set(exact_counts.keys())
-        # Green letters are implicitly not in the "not allowed" set.
+        # Green letters are also implicitly not in the "not allowed" set for the solver.
         not_allowed_letters -= green_letters
 
         # A letter can't be both green and explicitly excluded in the side panel.
@@ -243,7 +247,7 @@ class WordleUI:
         )
         future.add_done_callback(self.on_filter_complete)
 
-    def run_full_filter(self, word_length: int, pattern: str, not_allowed: str, misplaced_input: str, used_letters: Set[str], not_allowed_letters: Set[str], exact_counts: Dict[str, int], min_counts: Dict[str, int]) -> Tuple[Results, Set[str], Set[str], int, List[Tuple[str, float]], Distribution]:
+    def run_full_filter(self, word_length: int, pattern: str, not_allowed: str, misplaced_input: str, used_letters: Set[str], not_allowed_letters: Set[str], exact_counts: Dict[str, int], min_counts: Dict[str, int]) -> Tuple[Results, Set[str], Set[str], int, List[Tuple[str, float]], Distribution, Dict[str, int]]:
         min_freq = int(self.min_freq_var.get())
         filtered_results = self.solver.filter_words(
             word_length, pattern, not_allowed, misplaced_input, exact_counts, min_counts
@@ -251,20 +255,20 @@ class WordleUI:
         overall_distribution, _ = self.solver.compute_letter_distributions(filtered_results)
         best_guess_list = self.solver.best_guesses(filtered_results, overall_distribution, min_frequency=min_freq)
         
-        return filtered_results, used_letters, not_allowed_letters, word_length, best_guess_list, overall_distribution
+        return filtered_results, used_letters, not_allowed_letters, word_length, best_guess_list, overall_distribution, exact_counts
 
     def on_filter_complete(self, future: concurrent.futures.Future) -> None:
         try:
-            results, used_letters, not_allowed_letters, word_length, best_guess_list, overall_distribution = future.result()
+            results, used_letters, not_allowed_letters, word_length, best_guess_list, overall_distribution, exact_counts = future.result()
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("Error", f"An error occurred: {e}"))
             self.root.after(0, lambda: self.filter_button.config(state=tk.NORMAL))
             self.root.after(0, lambda: self.status_text.set("Error during filtering"))
             return
 
-        self.root.after(0, self.update_ui, results, best_guess_list, overall_distribution, used_letters, not_allowed_letters, word_length)
+        self.root.after(0, self.update_ui, results, best_guess_list, overall_distribution, used_letters, not_allowed_letters, word_length, exact_counts)
 
-    def update_ui(self, results: Results, best_guess_list: List[Tuple[str, float]], overall_distribution: Distribution, used_letters: Set[str], not_allowed_letters: Set[str], word_length: int) -> None:
+    def update_ui(self, results: Results, best_guess_list: List[Tuple[str, float]], overall_distribution: Distribution, used_letters: Set[str], not_allowed_letters: Set[str], word_length: int, exact_counts: Dict[str, int]) -> None:
         try:
             with open("sorted_filtered_words.txt", "w") as outfile:
                 for word, freq in results:
@@ -289,9 +293,16 @@ class WordleUI:
             min_freq = int(self.min_freq_var.get())
         except ValueError:
             min_freq = 0
-            
+
+        # Reconstruct the full set of letters that are not in the word.
+        # This includes letters explicitly marked gray (which end up in exact_counts with a count of 0)
+        # and letters from the "not allowed" side-entry.
+        true_not_allowed = not_allowed_letters.union({
+            letter for letter, count in exact_counts.items() if count == 0
+        })
+        
         remaining_words = self.solver.find_words_from_remaining_letters(
-            used_letters, not_allowed_letters, overall_distribution, word_length, min_freq
+            used_letters, true_not_allowed, overall_distribution, word_length, min_freq
         )
         for word, score in remaining_words:
             self.remaining_words_tree.insert("", tk.END, values=(word, score))
